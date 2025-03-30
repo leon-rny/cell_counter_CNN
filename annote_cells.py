@@ -5,43 +5,103 @@ import pandas as pd
 import czifile
 from roifile import ImagejRoi
 
-def onclick(event):
-    if event.xdata and event.ydata:
-        x, y = int(event.xdata), int(event.ydata)
-        points.append((x, y))
-        ax.plot(x, y, 'ro')
-        fig.canvas.draw()
+def load_image(image_path, roi_path):
+    with czifile.CziFile(image_path) as czi:
+        image = czi.asarray()
+    image = np.squeeze(image)
 
-# Load the CZI image and ROI
-cwd = os.getcwd()
-number = '01_3'
-image_path = cwd + f'/data/duodenum_{number}.czi'
-roi_path = cwd + f'/data/duodenum_{number}.roi'
-output_csv = f'data/cell_points_{number}.csv'
+    roi = ImagejRoi.fromfile(roi_path)
+    roi_coords = roi.coordinates()
+    closed_coords = np.vstack([roi_coords, roi_coords[0]])
 
-with czifile.CziFile(image_path) as czi:
-    image = czi.asarray()
-image = np.squeeze(image)
+    # Normalize the second channel
+    channel_2 = image[1] * 25
+    normalized = (channel_2 - np.min(channel_2)) / (np.max(channel_2) - np.min(channel_2))
+    return normalized, closed_coords
 
-roi = ImagejRoi.fromfile(roi_path)
-roi_coords = roi.coordinates()
-closed_coords = np.vstack([roi_coords, roi_coords[0]])
+def annotate_points(image, coords, output_csv):
+    points = []
 
-channel_2 = image[1] * 25
-normalized = (channel_2 - np.min(channel_2)) / (np.max(channel_2) - np.min(channel_2))
+    def onclick(event):
+        if event.xdata and event.ydata:
+            x, y = int(event.xdata), int(event.ydata)
+            points.append((x, y))
+            ax.plot(x, y, 'ro')
+            fig.canvas.draw()
 
-fig, ax = plt.subplots()
-ax.imshow(normalized, cmap='Reds')
-ax.plot(closed_coords[:, 0], closed_coords[:, 1], 'r--')
-ax.set_title("Click on the image to select points")
+    # Display the image and ROI
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap='Reds')
+    ax.plot(coords[:, 0], coords[:, 1], 'r--')
 
-points = []
-cid = fig.canvas.mpl_connect('button_press_event', onclick)
-plt.show()
+    points = []
+    ax.set_title("Click on the image to select points")
+    fig.canvas.mpl_connect('button_press_event', onclick)
+    plt.show()
 
-if points:
     df = pd.DataFrame(points, columns=['x', 'y'])
     df.to_csv(output_csv, index=False)
     print(f"{len(points)} points saved as: {output_csv}")
-else:
-    print("No points were selected.")
+
+def create_patches(image, points_csv, patch_size=100, output_dir='patches', number='01_3'):
+    os.makedirs(output_dir, exist_ok=True)
+
+    df = pd.read_csv(points_csv)
+    points = df[['x', 'y']].values.astype(int)
+
+    h, w = image.shape
+    half = patch_size // 2
+    patch_id = 0
+
+    for x, y in points:
+        x0, x1 = x - half, x + half
+        y0, y1 = y - half, y + half
+
+        if x0 < 0 or y0 < 0 or x1 > w or y1 > h:
+            continue
+
+        patch = image[y0:y1, x0:x1]
+        local_point = [(half, half)]
+
+        patch_path = os.path.join(output_dir, f"{number}_{patch_id:04d}.npy")
+        coords_path = os.path.join(output_dir, f"{number}_{patch_id:04d}_coords.csv")
+
+        np.save(patch_path, patch)
+        pd.DataFrame(local_point, columns=['x', 'y']).to_csv(coords_path, index=False)
+
+        patch_id += 1
+
+# Paths
+cwd = os.getcwd()
+image_path = cwd + '/data/images'
+roi_path = cwd + '/data/rois'
+patches_path = cwd + '/data/patches'
+output_csv_path = cwd + '/data/coords'
+
+# filter for .czi files
+image_files = [f for f in os.listdir(image_path) if f.endswith('.czi')]
+roi_files = [f for f in os.listdir(roi_path) if f.endswith('.roi')]
+
+for i in range(0, 2):
+    image_file = image_files[i]
+    roi_file = roi_files[i]
+    image_path = os.path.join(image_path, image_file)
+    roi_path = os.path.join(roi_path, roi_file)
+    number = image_file[-8: -4]
+    output_csv_path = os.path.join(output_csv_path, f"{number}_coords.csv")
+    patches_path = os.path.join(patches_path, number)
+
+    # Load image and ROI
+    normalized, closed_coords = load_image(image_path, roi_path)
+
+    # Annotate points
+    annotate_points(normalized, closed_coords, output_csv_path)
+
+    # Create patches
+    create_patches(image=normalized, points_csv=output_csv_path, patch_size=100, output_dir=patches_path, number=number)
+
+    # reset paths
+    image_path = cwd + '/data/images'
+    roi_path = cwd + '/data/rois'
+    patches_path = cwd + '/data/patches'
+    output_csv_path = cwd + '/data/coords'

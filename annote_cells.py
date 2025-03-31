@@ -82,7 +82,7 @@ output_csv_path = cwd + '/data/coords'
 image_files = [f for f in os.listdir(image_path) if f.endswith('.czi')]
 roi_files = [f for f in os.listdir(roi_path) if f.endswith('.roi')]
 
-for i in range(0, 2):
+for i in range(3, 6):
     image_file = image_files[i]
     roi_file = roi_files[i]
     image_path = os.path.join(image_path, image_file)

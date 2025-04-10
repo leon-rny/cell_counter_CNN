@@ -2,8 +2,10 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy.ndimage import gaussian_filter
 import czifile
 from roifile import ImagejRoi
+
 
 def load_image(image_path, roi_path):
     with czifile.CziFile(image_path) as czi:
@@ -71,6 +73,32 @@ def create_patches(image, points_csv, patch_size=100, output_dir='patches', numb
 
         patch_id += 1
 
+def generate_heatmap(shape, points, sigma=2):
+    heatmap = np.zeros(shape, dtype=np.float32)
+    for x, y in points:
+        if 0 <= x < shape[1] and 0 <= y < shape[0]:
+            heatmap[int(y), int(x)] = 1.0
+    return gaussian_filter(heatmap, sigma=sigma)
+
+def create_heatmaps_for_patches(patch_dir, sigma=2):
+    count = 0
+    for file in sorted(os.listdir(patch_dir)):
+        if not file.endswith('.npy') or 'heatmap' in file:
+            continue
+
+        base = file[:-4]
+        patch_path = os.path.join(patch_dir, file)
+        coords_path = os.path.join(patch_dir, base + '_coords.csv')
+        heatmap_path = os.path.join(patch_dir, base + '_heatmap.npy')
+
+        patch = np.load(patch_path)
+        df = pd.read_csv(coords_path)
+        points = df[['x', 'y']].values
+
+        heatmap = generate_heatmap(patch.shape, points, sigma)
+        np.save(heatmap_path, heatmap)
+        count += 1
+
 # Paths
 cwd = os.getcwd()
 image_path = cwd + '/data/images'
@@ -82,7 +110,7 @@ output_csv_path = cwd + '/data/coords'
 image_files = [f for f in os.listdir(image_path) if f.endswith('.czi')]
 roi_files = [f for f in os.listdir(roi_path) if f.endswith('.roi')]
 
-for i in range(7, 8):
+for i in range(1, 6):
     image_file = image_files[i]
     roi_file = roi_files[i]
     image_path = os.path.join(image_path, image_file)

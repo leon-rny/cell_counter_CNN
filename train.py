@@ -1,43 +1,79 @@
-import os
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from model import SimpleCNN
-from dataset import CellDataset
+import torch.nn as nn
+import torch.optim as optim
 import matplotlib.pyplot as plt
-import czifile
 
-cwd = os.getcwd()
-number = '01_3'
-image_path = cwd + f'/data/duodenum_{number}.czi'
+from dataset import CellImageHeatmapDataset
+from model import SimpleCNN
 
-with czifile.CziFile(image_path) as czi:
-    image = czi.asarray()
-image = np.squeeze(image)
+# === Parameter ===
+DATASET_PATH = 'data/dataset'
+BATCH_SIZE = 8
+EPOCHS = 10
+LR = 1e-3
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-channel_2 = image[1] * 25
-normalized = (channel_2 - np.min(channel_2)) / (np.max(channel_2) - np.min(channel_2))
+# === Daten laden ===
+dataset = CellImageHeatmapDataset(DATASET_PATH)
+dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-dataset = CellDataset(image=normalized, csv_path='data/cell_points_01_3.csv')
-loader = DataLoader(dataset, batch_size=1)
+# === Modell ===
+model = SimpleCNN().to(DEVICE)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=LR)
 
-model = SimpleCNN()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-loss_fn = torch.nn.MSELoss()
+# === Training ===
+losses = []
+for epoch in range(EPOCHS):
+    model.train()
+    running_loss = 0.0
 
-for epoch in range(50):
-    for x, y in loader:
-        pred = model(x)
-        loss = loss_fn(pred, y)
+    for imgs, heatmaps in dataloader:
+        imgs = imgs.to(DEVICE)
+        heatmaps = heatmaps.to(DEVICE)
+
+        preds = model(imgs)
+        loss = criterion(preds, heatmaps)
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    if epoch % 10 == 0:
-        print(f"Epoch {epoch}, Loss: {loss.item():.5f}")
 
-with torch.no_grad():
-    pred = model(x).squeeze().numpy()
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    ax[0].imshow(normalized, cmap='gray')
-    ax[1].imshow(pred, cmap='viridis')
-    plt.show()
+        running_loss += loss.item() * imgs.size(0)
+
+    epoch_loss = running_loss / len(dataloader.dataset)
+    losses.append(epoch_loss)
+    print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {epoch_loss:.6f}")
+
+    # === Visualisierung alle 5 Epochen ===
+    if (epoch + 1) % 5 == 0:
+        model.eval()
+        with torch.no_grad():
+            sample_img, sample_heat = dataset[0]
+            pred = model(sample_img.unsqueeze(0).to(DEVICE)).squeeze().cpu().numpy()
+
+            plt.figure(figsize=(12, 4))
+            plt.subplot(1, 3, 1)
+            plt.imshow(sample_img.squeeze(), cmap='gray')
+            plt.title('Input Image')
+            plt.subplot(1, 3, 2)
+            plt.imshow(sample_heat.squeeze(), cmap='hot')
+            plt.title('Target Heatmap')
+            plt.subplot(1, 3, 3)
+            plt.imshow(pred, cmap='hot')
+            plt.title('Prediction')
+            plt.tight_layout()
+            plt.show()
+
+# === Verlustverlauf speichern/plotten ===
+plt.plot(losses)
+plt.title('Training Loss')
+plt.xlabel('Epoch')
+plt.ylabel('MSE Loss')
+plt.grid()
+plt.show()
+
+# === Modell speichern (optional) ===
+torch.save(model.state_dict(), 'cell_model.pth')
+print("✅ Modell gespeichert als 'cell_model.pth'")

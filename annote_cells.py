@@ -6,7 +6,6 @@ from scipy.ndimage import gaussian_filter
 import czifile
 from roifile import ImagejRoi
 
-
 def load_image(image_path, roi_path):
     with czifile.CziFile(image_path) as czi:
         image = czi.asarray()

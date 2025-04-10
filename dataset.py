@@ -1,25 +1,33 @@
+# dataset.py
+
 import torch
 from torch.utils.data import Dataset
+import os
 import numpy as np
-from scipy.ndimage import gaussian_filter
-import pandas as pd
 
-class CellDataset(Dataset):
-    def __init__(self, image, csv_path, sigma=2):
-        self.image = image.astype(np.float32)[None, ...]
-        df = pd.read_csv(csv_path)
-        self.points = df[['x', 'y']].values
-        self.heatmap = self.generate_heatmap(self.points, image.shape, sigma)
-
-    def generate_heatmap(self, points, shape, sigma):
-        heatmap = np.zeros(shape, dtype=np.float32)
-        for x, y in points:
-            if 0 <= x < shape[1] and 0 <= y < shape[0]:
-                heatmap[int(y), int(x)] = 1.0
-        return gaussian_filter(heatmap, sigma=sigma)[None, ...]
+class CellImageHeatmapDataset(Dataset):
+    def __init__(self, data_dir):
+        """
+        Erwartet .npy-Dateien im Format:
+        - sample_XXXX_img.npy
+        - sample_XXXX_heat.npy
+        """
+        self.data_dir = data_dir
+        self.sample_ids = sorted(set(f.split('_')[1] for f in os.listdir(data_dir) if f.endswith('_img.npy')))
 
     def __len__(self):
-        return 1 
+        return len(self.sample_ids)
 
     def __getitem__(self, idx):
-        return torch.tensor(self.image), torch.tensor(self.heatmap)
+        sid = self.sample_ids[idx]
+        img_path = os.path.join(self.data_dir, f'sample_{sid}_img.npy')
+        heat_path = os.path.join(self.data_dir, f'sample_{sid}_heat.npy')
+
+        img = np.load(img_path).astype(np.float32)  # [H, W]
+        heat = np.load(heat_path).astype(np.float32)  # [H, W]
+
+        # In Tensor [1, H, W]
+        img = torch.from_numpy(img).unsqueeze(0)
+        heat = torch.from_numpy(heat).unsqueeze(0)
+
+        return img, heat

@@ -7,7 +7,7 @@ from model import MiniUNet
 
 # Parameter
 VAL_DIR = 'data/dataset/val'           
-MODEL_PATH = 'cell_miniunet.pth'   
+MODEL_PATH = 'model/cell_miniunet.pth'   
 BATCH_SIZE = 1                          
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 

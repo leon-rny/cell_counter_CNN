@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from dataset import CellImageHeatmapDataset
 from model import MiniUNet
@@ -11,7 +12,7 @@ from model import MiniUNet
 TRAIN_DIR = 'data/dataset/train'
 VAL_DIR = 'data/dataset/val'
 BATCH_SIZE = 8
-EPOCHS = 3
+EPOCHS = 5
 LR = 1e-3
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -39,7 +40,7 @@ for epoch in range(EPOCHS):
     running_loss = 0.0
 
     # train
-    for imgs, heatmaps in train_loader:
+    for imgs, heatmaps in tqdm(train_loader, desc=f"Training Epoch {epoch+1}/{EPOCHS}"):
         imgs = imgs.to(DEVICE)
         heatmaps = heatmaps.to(DEVICE)
 
@@ -52,14 +53,14 @@ for epoch in range(EPOCHS):
 
         running_loss += loss.item() * imgs.size(0)
 
-    epoch_train_loss = running_loss / len(train_loader.dataset)
-    train_losses.append(epoch_train_loss)
+        epoch_train_loss = running_loss / len(train_loader.dataset)
+        train_losses.append(epoch_train_loss)
 
     # validate
     model.eval()
     val_running_loss = 0.0
     with torch.no_grad():
-        for imgs, heatmaps in val_loader:
+        for imgs, heatmaps in tqdm(val_loader, desc=f"Validating Epoch {epoch+1}/{EPOCHS}"):
             imgs = imgs.to(DEVICE)
             heatmaps = heatmaps.to(DEVICE)
 
@@ -82,8 +83,8 @@ for epoch in range(EPOCHS):
 
 # Plot
 plt.figure(figsize=(8, 6))
-plt.plot(train_losses, label='Train Loss')
-plt.plot(val_losses, label='Validation Loss')
+plt.plot(range(1, len(train_losses)+1), train_losses, label='Train Loss')
+plt.plot(range(1, len(val_losses)+1), val_losses, label='Validation Loss')
 plt.xlabel('Epoch')
 plt.ylabel('MSE Loss')
 plt.legend()

@@ -95,6 +95,8 @@ def create_heatmaps_for_patches(patch_dir, sigma=2):
         points = df[['x', 'y']].values
 
         heatmap = generate_heatmap(patch.shape, points, sigma)
+        heatmap *= 10.0
+        heatmap = np.clip(heatmap, 0, 1)
         np.save(heatmap_path, heatmap)
         count += 1
 
@@ -109,7 +111,7 @@ output_csv_path = cwd + '/data/coords'
 image_files = [f for f in os.listdir(image_path) if f.endswith('.czi')]
 roi_files = [f for f in os.listdir(roi_path) if f.endswith('.roi')]
 
-for i in range(1, 6):
+for i in range(1, 38):
     image_file = image_files[i]
     roi_file = roi_files[i]
     image_path = os.path.join(image_path, image_file)
@@ -132,3 +134,11 @@ for i in range(1, 6):
     roi_path = cwd + '/data/rois'
     patches_path = cwd + '/data/patches'
     output_csv_path = cwd + '/data/coords'
+
+# create heatmaps
+for subfolder in sorted(os.listdir(patches_path)):
+    full_subfolder_path = os.path.join(patches_path, subfolder)
+
+    if os.path.isdir(full_subfolder_path):
+        print(f"Edit Ordner: {subfolder}")
+        create_heatmaps_for_patches(patch_dir=full_subfolder_path, sigma=2)

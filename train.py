@@ -5,31 +5,41 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 
 from dataset import CellImageHeatmapDataset
-from model import SimpleCNN
+from model import MiniUNet
 
-# === Parameter ===
-DATASET_PATH = 'data/dataset'
+# Parameter
+TRAIN_DIR = 'data/dataset/train'
+VAL_DIR = 'data/dataset/val'
 BATCH_SIZE = 8
-EPOCHS = 10
+EPOCHS = 3
 LR = 1e-3
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# === Daten laden ===
-dataset = CellImageHeatmapDataset(DATASET_PATH)
-dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+# load dataset
+train_dataset = CellImageHeatmapDataset(TRAIN_DIR)
+val_dataset = CellImageHeatmapDataset(VAL_DIR)
 
-# === Modell ===
-model = SimpleCNN().to(DEVICE)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+print(f"Train Samples: {len(train_dataset)}, Validation Samples: {len(val_dataset)}")
+
+# create model
+model = MiniUNet().to(DEVICE)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=LR)
 
-# === Training ===
-losses = []
+# training and validation loop
+train_losses = []
+val_losses = []
+best_val_loss = float('inf')
+
 for epoch in range(EPOCHS):
     model.train()
     running_loss = 0.0
 
-    for imgs, heatmaps in dataloader:
+    # train
+    for imgs, heatmaps in train_loader:
         imgs = imgs.to(DEVICE)
         heatmaps = heatmaps.to(DEVICE)
 
@@ -42,38 +52,41 @@ for epoch in range(EPOCHS):
 
         running_loss += loss.item() * imgs.size(0)
 
-    epoch_loss = running_loss / len(dataloader.dataset)
-    losses.append(epoch_loss)
-    print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {epoch_loss:.6f}")
+    epoch_train_loss = running_loss / len(train_loader.dataset)
+    train_losses.append(epoch_train_loss)
 
-    # === Visualisierung alle 5 Epochen ===
-    if (epoch + 1) % 5 == 0:
-        model.eval()
-        with torch.no_grad():
-            sample_img, sample_heat = dataset[0]
-            pred = model(sample_img.unsqueeze(0).to(DEVICE)).squeeze().cpu().numpy()
+    # validate
+    model.eval()
+    val_running_loss = 0.0
+    with torch.no_grad():
+        for imgs, heatmaps in val_loader:
+            imgs = imgs.to(DEVICE)
+            heatmaps = heatmaps.to(DEVICE)
 
-            plt.figure(figsize=(12, 4))
-            plt.subplot(1, 3, 1)
-            plt.imshow(sample_img.squeeze(), cmap='gray')
-            plt.title('Input Image')
-            plt.subplot(1, 3, 2)
-            plt.imshow(sample_heat.squeeze(), cmap='hot')
-            plt.title('Target Heatmap')
-            plt.subplot(1, 3, 3)
-            plt.imshow(pred, cmap='hot')
-            plt.title('Prediction')
-            plt.tight_layout()
-            plt.show()
+            preds = model(imgs)
+            loss = criterion(preds, heatmaps)
 
-# === Verlustverlauf speichern/plotten ===
-plt.plot(losses)
-plt.title('Training Loss')
+            val_running_loss += loss.item() * imgs.size(0)
+
+    epoch_val_loss = val_running_loss / len(val_loader.dataset)
+    val_losses.append(epoch_val_loss)
+
+    print(f"Epoch {epoch+1}/{EPOCHS} | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
+
+    # save best model
+    if epoch_val_loss < best_val_loss:
+        best_val_loss = epoch_val_loss
+        torch.save(model.state_dict(), 'model/cell_miniunet.pth')
+        print(f"Saved best model (Val Loss: {best_val_loss:.6f})")
+
+
+# Plot
+plt.figure(figsize=(8, 6))
+plt.plot(train_losses, label='Train Loss')
+plt.plot(val_losses, label='Validation Loss')
 plt.xlabel('Epoch')
 plt.ylabel('MSE Loss')
+plt.legend()
 plt.grid()
+plt.title('Training vs Validation Loss')
 plt.show()
-
-# === Modell speichern (optional) ===
-torch.save(model.state_dict(), 'cell_model.pth')
-print("✅ Modell gespeichert als 'cell_model.pth'")

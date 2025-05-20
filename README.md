@@ -33,3 +33,6 @@ This is a **functional prototype**. The goal was to prove feasibility and explor
 - Develop an interactive GUI (e.g., PyQt)  
 - Improve model evaluation, checkpointing, and error handling  
 - Integrate into lab workflows or batch-processing pipelines
+
+## Example
+![Prediction Overlay](docs/output.png)

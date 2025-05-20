@@ -3,10 +3,10 @@ import torch
 from czifile import CziFile
 from roifile import ImagejRoi
 import matplotlib.pyplot as plt
-from matplotlib.path import Path
+import matplotlib.patches as patches
 from skimage.feature import peak_local_max
 from skimage.draw import polygon
-from skimage.measure import find_contours
+from skimage.measure import label, regionprops
 
 from model import MiniUNet
 
@@ -32,7 +32,7 @@ def load_image(image_path, roi_path):
     return masked_image
 
 # parameter
-tissue_type = 'duodenum_01_3'
+tissue_type = 'duodenum_06_7'
 MODEL_PATH = 'model/cell_miniunet.pth'                           
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 CZI_PATH = rf'data/images/{tissue_type}.czi'
@@ -43,7 +43,6 @@ STRIDE = 50
 # load image
 image = load_image(CZI_PATH, ROI_PATH)
 H, W = image.shape
-print(f"Bildgröße: {H} x {W}")
 
 # load model
 model = MiniUNet().to(DEVICE)
@@ -55,7 +54,7 @@ full_heatmap = np.zeros_like(image)
 weight_map = np.zeros_like(image)
 patch_coords = []
 
-# Sliding-Window Prediction
+# sliding-window prediction
 for y0 in range(0, H - PATCH_SIZE + 1, STRIDE):
     for x0 in range(0, W - PATCH_SIZE + 1, STRIDE):
         patch = image[y0:y0+PATCH_SIZE, x0:x0+PATCH_SIZE]
@@ -70,5 +69,43 @@ for y0 in range(0, H - PATCH_SIZE + 1, STRIDE):
 normalized_heatmap = full_heatmap / np.maximum(weight_map, 1e-6)
 
 coords = peak_local_max(normalized_heatmap, threshold_abs=0.002, min_distance=5)
-print(f"Erkannte Zellen: {len(coords)}")
+print(f"Found cells: {len(coords)}")
 
+# plot
+threshold = 0.002
+binary_map = normalized_heatmap > threshold
+
+label_map = label(binary_map)
+regions = regionprops(label_map)
+
+fig, ax = plt.subplots(figsize=(12, 10))
+ax.imshow(image, cmap='Reds')
+ax.set_title('Celldetection')
+ax.axis('off')
+
+for region in regions:
+    if region.area < 10:
+        continue
+
+    # Bounding Box
+    minr, minc, maxr, maxc = region.bbox
+    # Increase rectangle size by expanding 5 pixels in each direction
+    expand = 5
+    minr_exp = max(minr - expand, 0)
+    minc_exp = max(minc - expand, 0)
+    maxr_exp = min(maxr + expand, image.shape[0])
+    maxc_exp = min(maxc + expand, image.shape[1])
+
+    rect = patches.Rectangle(
+        (minc_exp, minr_exp),
+        maxc_exp - minc_exp,
+        maxr_exp - minr_exp,
+        linewidth=1.5,
+        edgecolor='lime',
+        facecolor='none'
+    )
+    ax.add_patch(rect)
+
+plt.tight_layout()
+plt.savefig('output.png', dpi=500)
+plt.show()
